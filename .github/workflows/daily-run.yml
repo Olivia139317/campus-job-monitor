@@ -1,5 +1,7 @@
 name: Daily Campus Job Monitor
 
+permissions: write-all
+
 on:
   schedule:
     - cron: '0 13 * * *'
@@ -8,40 +10,31 @@ on:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
       - name: Run campus job monitor
-        run: |
-          python main.py
+        run: python main.py
         env:
           TZ: Asia/Shanghai
-
-      - name: Commit generated HTML
+      - name: Commit and push
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/index.html
           git diff --staged --quiet || git commit -m "自动更新校招实习日报"
           git push
-
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./output
           publish_branch: gh-pages
-          force_orphan: true
