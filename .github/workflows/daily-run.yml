@@ -1,0 +1,48 @@
+name: Daily Campus Job Monitor
+
+on:
+  schedule:
+      - cron: '0 13 * * *'
+        workflow_dispatch:
+
+        jobs:
+          monitor:
+              runs-on: ubuntu-latest
+
+                  steps:
+                        - name: Checkout repository
+                                uses: actions/checkout@v4
+
+                                      - name: Set up Python
+                                              uses: actions/setup-python@v5
+                                                      with:
+                                                                python-version: '3.11'
+                                                                          cache: 'pip'
+
+                                                                                - name: Install dependencies
+                                                                                        run: |
+                                                                                                  python -m pip install --upgrade pip
+                                                                                                            pip install -r requirements.txt
+                                                                                                            
+                                                                                                                  - name: Run campus job monitor
+                                                                                                                          run: |
+                                                                                                                                    python main.py
+                                                                                                                                            env:
+                                                                                                                                                      TZ: Asia/Shanghai
+                                                                                                                                                      
+                                                                                                                                                            - name: Commit generated HTML
+                                                                                                                                                                    run: |
+                                                                                                                                                                              git config --local user.email "action@github.com"
+                                                                                                                                                                                        git config --local user.name "GitHub Action"
+                                                                                                                                                                                                  git add output/index.html
+                                                                                                                                                                                                            git diff --staged --quiet || git commit -m "自动更新校招实习日报"
+                                                                                                                                                                                                                      git push
+                                                                                                                                                                                                                      
+                                                                                                                                                                                                                            - name: Deploy to GitHub Pages
+                                                                                                                                                                                                                                    uses: peaceiris/actions-gh-pages@v3
+                                                                                                                                                                                                                                            with:
+                                                                                                                                                                                                                                                      github_token: ${{ secrets.GITHUB_TOKEN }}
+                                                                                                                                                                                                                                                                publish_dir: ./output
+                                                                                                                                                                                                                                                                          publish_branch: gh-pages
+                                                                                                                                                                                                                                                                                    force_orphan: true
+                                                                                                                                                                                                                                                                                    
