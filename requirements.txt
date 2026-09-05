@@ -1,0 +1,6 @@
+# 校招实习监控 - Python依赖
+# 安装命令：pip install -r requirements.txt
+
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+feedparser>=6.0.0
