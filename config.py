@@ -85,6 +85,29 @@ SHIXISENG_API_URLS = [
 # 实习僧职位详情页URL格式（用uuid拼接）
 SHIXISENG_JOB_URL_TEMPLATE = "https://www.shixiseng.com/intern/{uuid}"
 
+# 腾讯招聘API（官方API，返回JSON，信息量大）
+# 格式：https://careers.tencent.com/tencentcareer/api/post/Query?keyword=关键词&pageIndex=页码&pageSize=每页数量&language=zh-cn&area=cn
+TENCENT_API_BASE = "https://careers.tencent.com/tencentcareer/api/post/Query"
+TENCENT_API_PARAMS = {
+    "language": "zh-cn",
+    "area": "cn",
+    "pageSize": 50,
+}
+# 腾讯招聘翻页数量（每页50，翻10页=500个岗位，避免请求太多被封）
+TENCENT_MAX_PAGES = 10
+
+# 2027届校招关键词（用于2027届板块）
+GRAD_2027_KEYWORDS = [
+    "2027",
+    "27届",
+    "2027届",
+    "校园招聘",
+    "校招",
+    "应届",
+    "应届生",
+    "毕业生",
+]
+
 # 牛客网校招信息页（第三方汇总，信息量大）
 # 注意：牛客网是JavaScript渲染的页面，requests可能拿不到完整数据，后续可调试
 NIUKE_URLS = [

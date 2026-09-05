@@ -282,6 +282,64 @@
         }
 
         /* ============================================================
+           板块样式（2028届主要 / 2027届参考）
+           ============================================================ */
+        .section {
+            margin-bottom: 36px;
+            padding: 20px;
+            border-radius: var(--radius);
+            background: var(--bg-card);
+            box-shadow: var(--shadow);
+        }
+
+        .section-primary {
+            border-left: 4px solid var(--primary);
+        }
+
+        .section-secondary {
+            border-left: 4px solid var(--warning);
+            background: #fffbeb;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0;
+        }
+
+        .section-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .section-primary .section-badge {
+            background: var(--primary-light);
+            color: var(--primary-dark);
+        }
+
+        .section-secondary .section-badge {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .section-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+
+        /* ============================================================
            底部信息
            ============================================================ */
         .footer {
@@ -361,18 +419,30 @@
         <!-- 统计卡片 -->
         {{STATS}}
 
-        <!-- 岗位类型统计 -->
-        {{JOB_TYPES}}
+        <!-- ==================== 2028届可投岗位（主要板块） ==================== -->
+        <section class="section section-primary">
+            <div class="section-header">
+                <h2 class="section-title">🎯 2028届可投岗位</h2>
+                <span class="section-badge">主要 · {{TOTAL_2028}}个</span>
+            </div>
+            <div class="section-desc">日常实习 / 暑期实习 / 2028届校招，工作地点：北京/上海</div>
+            {{JOBS_2028}}
+        </section>
 
-        <!-- 岗位卡片列表 -->
-        <main class="job-content">
-            {{JOB_CARDS}}
-        </main>
+        <!-- ==================== 2027届校招参考（次要板块） ==================== -->
+        <section class="section section-secondary">
+            <div class="section-header">
+                <h2 class="section-title">📚 2027届校招参考</h2>
+                <span class="section-badge">参考 · {{TOTAL_2027}}个</span>
+            </div>
+            <div class="section-desc">2027届校园招聘信息，提前了解校招节奏和岗位要求，为明年做准备</div>
+            {{JOBS_2027}}
+        </section>
 
         <!-- 底部信息 -->
         <footer class="footer">
             <p>本页面由自动化脚本生成，信息来源于各企业招聘官网及第三方校招汇总平台</p>
-            <p>所有岗位信息均来自官方渠道，投递前请以官方页面为准 | 共 {{TOTAL_JOBS}} 条符合条件的岗位</p>
+            <p>所有岗位信息均来自官方渠道，投递前请以官方页面为准 | 2028届可投 {{TOTAL_2028}} 条 · 2027届参考 {{TOTAL_2027}} 条</p>
             <p>项目可拓展：支持添加更多企业、信息源、推送渠道和数据分析功能</p>
         </footer>
     </div>

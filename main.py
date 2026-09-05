@@ -115,6 +115,79 @@ def fetch_url(url: str) -> Optional[str]:
         return None
 
 
+def spider_tencent() -> List[Job]:
+    """
+    爬虫0：腾讯招聘官方API（信息量大，2261+岗位）
+    翻页获取北京/上海的岗位
+    """
+    jobs = []
+    import time as _time
+
+    for page in range(1, config.TENCENT_MAX_PAGES + 1):
+        try:
+            params = config.TENCENT_API_PARAMS.copy()
+            params["pageIndex"] = page
+            params["timestamp"] = int(_time.time() * 1000)
+
+            logger.info(f"正在请求腾讯招聘API第{page}页")
+            resp = requests.get(
+                config.TENCENT_API_BASE,
+                params=params,
+                headers=config.HEADERS,
+                timeout=config.REQUEST_TIMEOUT,
+            )
+
+            if resp.status_code != 200:
+                logger.warning(f"腾讯招聘API请求失败，状态码：{resp.status_code}")
+                break
+
+            data = resp.json()
+            if not data or data.get("Code") != 200:
+                logger.warning(f"腾讯招聘API返回异常：{data}")
+                break
+
+            posts = data.get("Data", {}).get("Posts", [])
+            if not posts:
+                logger.info(f"腾讯招聘第{page}页无数据，停止翻页")
+                break
+
+            for post in posts:
+                try:
+                    title = post.get("RecruitPostName", "").strip()
+                    city = post.get("LocationName", "").strip()
+                    category = post.get("CategoryName", "").strip()
+                    url = post.get("PostURL", "").strip()
+                    publish_date = post.get("LastUpdateTime", "").strip()
+
+                    if not title or not city:
+                        continue
+
+                    # 只保留北京/上海的岗位
+                    if not any(c in city for c in config.TARGET_CITIES):
+                        continue
+
+                    jobs.append(Job(
+                        company="腾讯",
+                        title=title,
+                        city=city,
+                        job_type=category,
+                        url=url,
+                        source="腾讯招聘官网",
+                        publish_date=publish_date,
+                    ))
+                except Exception as e:
+                    logger.debug(f"解析腾讯招聘单个岗位失败：{e}")
+                    continue
+
+            _time.sleep(config.REQUEST_DELAY)
+        except Exception as e:
+            logger.error(f"腾讯招聘API请求异常：{e}")
+            break
+
+    logger.info(f"腾讯招聘爬取到 {len(jobs)} 条京沪岗位")
+    return jobs
+
+
 def spider_shixiseng() -> List[Job]:
     """
     爬虫0：实习僧API（可靠的结构化数据源，返回JSON）
@@ -438,7 +511,7 @@ def filter_jobs(jobs: List[Job]) -> List[Job]:
     按条件筛选岗位：
     1. 只保留目标城市（上海/北京）
     2. 只保留目标企业（Top 30）
-    3. 2028届宽松匹配（日常实习全留，暑期实习/校招看关键词）
+    3. 保留2028届可投的岗位 + 2027届校招岗位（后续分板块显示）
     """
     filtered = []
     for job in jobs:
@@ -457,41 +530,70 @@ def filter_jobs(jobs: List[Job]) -> List[Job]:
         # 用匹配到的标准企业名替换
         job.company = matched_company
 
-        # 条件3：2028届宽松匹配
-        # 日常实习：全部保留（不限制毕业年份）
-        # 暑期实习/校招：检查标题是否包含目标毕业届关键词
+        # 条件3：届数筛选
+        # 日常实习：全部保留（2028届可投）
         if job.job_type == "日常实习":
             filtered.append(job)
             continue
 
-        # 其他类型：检查是否包含2028届相关关键词，或者标题中没有明确的届数限制（宽松匹配）
         title_lower = job.title
-        has_graduation_limit = any(
-            year in title_lower for year in ["2024", "2025", "2026", "2027", "24届", "25届", "26届", "27届"]
-        )
-        is_target_graduation = any(kw in title_lower for kw in config.TARGET_GRADUATION_KEYWORDS)
 
-        # 宽松匹配：如果没有明确的毕业年份限制，或者明确是2028届，就保留
-        if not has_graduation_limit or is_target_graduation:
+        # 2028届相关：保留
+        is_2028 = any(kw in title_lower for kw in ["2028", "28届", "2028届"])
+        if is_2028:
+            filtered.append(job)
+            continue
+
+        # 2027届校招相关：保留（放到2027届板块）
+        is_2027 = any(kw in title_lower for kw in config.GRAD_2027_KEYWORDS)
+        if is_2027:
+            filtered.append(job)
+            continue
+
+        # 没有明确届数限制的岗位：宽松保留（可能是社招或长期实习）
+        has_other_grad_limit = any(
+            year in title_lower for year in ["2024", "2025", "2026", "24届", "25届", "26届"]
+        )
+        if not has_other_grad_limit:
             filtered.append(job)
 
     logger.info(f"筛选后剩余 {len(filtered)} 条岗位（筛选前 {len(jobs)} 条）")
     return filtered
 
 
+def classify_by_graduation(jobs: List[Job]) -> tuple:
+    """
+    把岗位分成两组：
+    - jobs_2028：2028届可投的岗位（日常实习、暑期实习、2028届校招）- 主要部分
+    - jobs_2027：2027届校招岗位 - 次要部分（参考用）
+    """
+    jobs_2028 = []
+    jobs_2027 = []
+
+    for job in jobs:
+        title = job.title
+
+        # 2027届校招：标题包含2027届相关关键词，且不是日常实习
+        is_2027 = any(kw in title for kw in ["2027", "27届", "2027届"])
+        if is_2027 and job.job_type != "日常实习":
+            jobs_2027.append(job)
+            continue
+
+        # 其他都归到2028届可投（日常实习、暑期实习、无明确届数限制的岗位）
+        jobs_2028.append(job)
+
+    logger.info(f"分类完成：2028届可投 {len(jobs_2028)} 条，2027届校招 {len(jobs_2027)} 条")
+    return jobs_2028, jobs_2027
+
+
 # ============================================================
 # 四、HTML生成模块
 # ============================================================
 
-def generate_html(jobs: List[Job]) -> str:
-    """生成简洁好看的HTML日报"""
-    # 统计信息
-    total = len(jobs)
-    companies = set(job.company for job in jobs)
-    cities = set(job.city for job in jobs)
-    job_types = {}
-    for job in jobs:
-        job_types[job.job_type] = job_types.get(job.job_type, 0) + 1
+def generate_job_cards(jobs: List[Job]) -> str:
+    """生成岗位卡片HTML（按企业分组）"""
+    if not jobs:
+        return '<div class="empty-state"><p>暂无相关岗位</p></div>'
 
     # 按企业分组
     jobs_by_company = {}
@@ -502,16 +604,6 @@ def generate_html(jobs: List[Job]) -> str:
 
     # 按企业名排序
     sorted_companies = sorted(jobs_by_company.keys())
-
-    # 读取HTML模板
-    template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), config.TEMPLATE_PATH)
-    try:
-        with open(template_path, "r", encoding="utf-8") as f:
-            template = f.read()
-    except FileNotFoundError:
-        logger.error(f"HTML模板文件不存在：{template_path}")
-        # 降级：用简单模板
-        template = get_simple_template()
 
     # 生成岗位卡片HTML
     job_cards_html = ""
@@ -545,31 +637,48 @@ def generate_html(jobs: List[Job]) -> str:
         job_cards_html += f'  </div>\n'
         job_cards_html += f'</div>\n'
 
+    return job_cards_html
+
+
+def generate_html(jobs_2028: List[Job], jobs_2027: List[Job]) -> str:
+    """生成简洁好看的HTML日报（2028届可投=主要，2027届校招=次要参考）"""
+    # 统计信息
+    total_2028 = len(jobs_2028)
+    total_2027 = len(jobs_2027)
+    all_jobs = jobs_2028 + jobs_2027
+    companies = set(job.company for job in all_jobs)
+    cities = set(job.city for job in all_jobs)
+
+    # 生成两个板块的岗位卡片
+    jobs_2028_html = generate_job_cards(jobs_2028)
+    jobs_2027_html = generate_job_cards(jobs_2027)
+
+    # 读取HTML模板
+    template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), config.TEMPLATE_PATH)
+    try:
+        with open(template_path, "r", encoding="utf-8") as f:
+            template = f.read()
+    except FileNotFoundError:
+        logger.error(f"HTML模板文件不存在：{template_path}")
+        template = get_simple_template()
+
     # 生成统计信息HTML
     stats_html = f"""
     <div class="stats">
-      <div class="stat-item"><span class="stat-number">{total}</span><span class="stat-label">岗位总数</span></div>
+      <div class="stat-item"><span class="stat-number">{total_2028}</span><span class="stat-label">2028届可投</span></div>
+      <div class="stat-item"><span class="stat-number">{total_2027}</span><span class="stat-label">2027届校招参考</span></div>
       <div class="stat-item"><span class="stat-number">{len(companies)}</span><span class="stat-label">覆盖企业</span></div>
-      <div class="stat-item"><span class="stat-number">{len(cities)}</span><span class="stat-label">覆盖城市</span></div>
     </div>
 """
-
-    # 生成岗位类型统计HTML
-    job_types_html = '<div class="job-type-stats">'
-    for jt, count in sorted(job_types.items(), key=lambda x: -x[1]):
-        job_types_html += f'<span class="type-tag tag-{jt}">{jt}: {count}</span>'
-    job_types_html += '</div>'
 
     # 替换模板中的占位符
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     html = template.replace("{{UPDATE_TIME}}", now)
     html = html.replace("{{STATS}}", stats_html)
-    html = html.replace("{{JOB_TYPES}}", job_types_html)
-    html = html.replace("{{JOB_CARDS}}", job_cards_html)
-    html = html.replace("{{TOTAL_JOBS}}", str(total))
-
-    if total == 0:
-        html = html.replace("{{JOB_CARDS}}", '<div class="empty-state"><p>今天暂时没有符合条件的岗位，明天再来看看吧～</p></div>')
+    html = html.replace("{{JOBS_2028}}", jobs_2028_html)
+    html = html.replace("{{JOBS_2027}}", jobs_2027_html)
+    html = html.replace("{{TOTAL_2028}}", str(total_2028))
+    html = html.replace("{{TOTAL_2027}}", str(total_2027))
 
     return html
 
@@ -612,6 +721,7 @@ def main():
     logger.info("\n--- 步骤1：信息爬取 ---")
 
     spiders = [
+        ("腾讯招聘官网", spider_tencent),
         ("实习僧API", spider_shixiseng),
         ("应届生求职网", spider_yingjiesheng),
         ("牛客网", spider_niuke),
@@ -639,14 +749,18 @@ def main():
     logger.info("\n--- 步骤3：条件筛选 ---")
     filtered_jobs = filter_jobs(cleaned_jobs)
 
+    # 步骤3.5：按毕业届数分类（2028届可投=主要，2027届校招=次要参考）
+    logger.info("\n--- 步骤3.5：按届数分类 ---")
+    jobs_2028, jobs_2027 = classify_by_graduation(filtered_jobs)
+
     # 步骤4：生成HTML
     logger.info("\n--- 步骤4：生成HTML日报 ---")
-    html = generate_html(filtered_jobs)
+    html = generate_html(jobs_2028, jobs_2027)
     output_path = save_html(html)
 
     # 完成
     logger.info("\n" + "=" * 60)
-    logger.info(f"运行完成！共筛选出 {len(filtered_jobs)} 条符合条件的岗位")
+    logger.info(f"运行完成！2028届可投 {len(jobs_2028)} 条，2027届校招参考 {len(jobs_2027)} 条")
     logger.info(f"HTML日报已生成：{output_path}")
     logger.info("=" * 60)
 
